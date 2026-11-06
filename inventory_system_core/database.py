@@ -15,7 +15,7 @@ class Database:
             port=int(os.getenv("DB_PORT", "3306")),
             user=os.getenv("DB_USER", "root"),
             password=os.getenv("DB_PASS", ""),
-            database=os.getenv("DB_NAME", "inventory_system"),
+            database=os.getenv("DB_NAME", "dunder_inventory"),
             charset="utf8mb4",
             cursorclass=DictCursor,
             autocommit=False,

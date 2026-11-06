@@ -1,7 +1,7 @@
 -- Dunder Mifflin Inventory Monitoring System
 -- Import into MySQL 8.0+ (or MariaDB 10.4+) before opening the site.
-CREATE DATABASE IF NOT EXISTS inventory_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE inventory_system;
+CREATE DATABASE IF NOT EXISTS dunder_inventory CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE dunder_inventory;
 
 CREATE TABLE IF NOT EXISTS supplier (
     supplier_id INT AUTO_INCREMENT PRIMARY KEY,

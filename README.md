@@ -11,7 +11,7 @@ A Flask + MySQL implementation of the Figma screens and Midterm Lab mini-SRS.
 ## Run locally on Windows
 
 1. Start MySQL in XAMPP.
-2. In phpMyAdmin, import `schema.sql`. It creates the `inventory_system` database and tables.
+2. In phpMyAdmin, import `schema.sql`. It creates the `dunder_inventory` database and tables.
 3. In PowerShell, from this project folder:
 
    ```powershell
@@ -20,7 +20,7 @@ A Flask + MySQL implementation of the Figma screens and Midterm Lab mini-SRS.
    python -m pip install -r requirements.txt
    $env:DB_HOST = "127.0.0.1"
    $env:DB_PORT = "3306"
-   $env:DB_NAME = "inventory_system"
+   $env:DB_NAME = "dunder_inventory"
    $env:SECRET_KEY = (python -c "import secrets; print(secrets.token_urlsafe(48))")
    flask --app inventory_system seed-demo
    python inventory_system.py
@@ -33,10 +33,6 @@ Set `DB_HOST`, `DB_PORT`, `DB_USER`, and `DB_PASS` in your local environment if 
 `seed-demo` only runs while the `users` table is empty. It generates temporary passwords and prints them once in the terminal; save them locally. Set `SEED_ADMIN_PASSWORD` and `SEED_PERSONNEL_PASSWORD` before seeding if you want to choose local demo passwords. Seeding is disabled when `APP_ENV=production`. Never reuse demo credentials on a public deployment.
 
 The main Python entry point is `inventory_system.py`; `app.py` remains as a compatibility launcher for older PyCharm run configurations. The staff member is modeled as `OfficePersonnel`; there is no duplicate `User` domain class. The `users` SQL table stores password hashes and links each account to either an `OfficePersonnel` or `InventoryAdmin` record.
-
-## Existing MySQL database
-
-The application now defaults to the `inventory_system` database. To keep existing data in `dunder_inventory`, back up the database and run [`DATABASE_RENAME.sql`](DATABASE_RENAME.sql) in phpMyAdmin. The script moves the tables without deleting the old database. Verify the application against `inventory_system` before removing the old schema. For a fresh install, import `schema.sql` instead; do not run both paths on the same tables.
 
 ## GitHub Pages and cloud hosting
 
