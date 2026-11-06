@@ -1,12 +1,13 @@
 # Inventory System — Dunder Mifflin
 
-A Flask + MySQL implementation of the Figma screens and Midterm Lab mini-SRS.
+A Flask + Jinja inventory application backed by MySQL locally. It also includes
+an optional SQLite backend for a separate PythonAnywhere Free demonstration.
 
 ## Requirements
 
 - Python 3.10 or later
 - MySQL 8.0+ or MariaDB 10.4+
-- MySQL enabled through XAMPP or another local service
+- MySQL enabled through XAMPP or another local service for the default backend
 
 ## Run locally on Windows
 
@@ -29,6 +30,15 @@ A Flask + MySQL implementation of the Figma screens and Midterm Lab mini-SRS.
 4. Open `http://127.0.0.1:5000`.
 
 Set `DB_HOST`, `DB_PORT`, `DB_USER`, and `DB_PASS` in your local environment if your MySQL setup uses values other than the local defaults.
+
+## PythonAnywhere Free demo
+
+The app keeps MySQL as its default backend. For a separate hosted demo database,
+the repository includes an SQLite backend, `schema.sqlite.sql`, and
+`migrate_mysql_to_sqlite.py`. The migration script reads the local MySQL tables
+and creates a new SQLite copy; it does not write to MySQL or overwrite an
+existing SQLite file. See [PYTHONANYWHERE_DEPLOYMENT.md](PYTHONANYWHERE_DEPLOYMENT.md)
+for the migration and WSGI steps. Do not commit the generated `.sqlite3` file.
 
 `seed-demo` only runs while the `users` table is empty. It generates temporary passwords and prints them once in the terminal; save them locally. Set `SEED_ADMIN_PASSWORD` and `SEED_PERSONNEL_PASSWORD` before seeding if you want to choose local demo passwords. Seeding is disabled when `APP_ENV=production`. Never reuse demo credentials on a public deployment.
 

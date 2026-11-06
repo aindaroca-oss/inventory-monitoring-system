@@ -3,7 +3,7 @@
   <div class="breadcrumb"><span>Workspace</span><i>/</i><b>{{ 'My Requests' if page=='requests' and user.role=='personnel' else {'team':'Team accounts','requests':'Supply Requests'}.get(page,page|title) }}</b></div>
   <div class="top-actions">
     <div class="notification-menu">
-      <button type="button" id="notification-toggle" class="icon-button notification-button" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notification-panel" data-notification-key="{{ notification_key }}" data-auto-open="{{ 'true' if show_stock_alerts else 'false' }}">
+      <button type="button" id="notification-toggle" class="icon-button notification-button" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notification-panel" data-notification-key="{{ notification_key }}">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
         {% if stock_notifications %}<i class="notification-dot" aria-hidden="true"></i>{% endif %}
       </button>

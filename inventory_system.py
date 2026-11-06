@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
-import pymysql
 from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import generate_password_hash
 
@@ -19,6 +18,7 @@ from inventory_system_core import (
     InventoryService,
     OfficePersonnel,
 )
+from inventory_system_core.database import DATABASE_ERROR_TYPES, INTEGRITY_ERROR_TYPES
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 app = Flask(
@@ -33,6 +33,7 @@ app.secret_key = configured_secret_key or secrets.token_urlsafe(32)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("APP_ENV", "development").lower() == "production",
     PERMANENT_SESSION_LIFETIME=timedelta(days=14),
     TEMPLATES_AUTO_RELOAD=True,
     SEND_FILE_MAX_AGE_DEFAULT=0,
@@ -196,6 +197,8 @@ def home():
             for item in items
             if item["qty_on_hand"] == 0 or item["qty_on_hand"] <= item["reorder_threshold"]
         ]
+        stock_out_count = sum(item["qty_on_hand"] == 0 for item in stock_notifications)
+        stock_low_count = sum(item["qty_on_hand"] > 0 for item in stock_notifications)
         notification_key = "stock-alerts-" + ",".join(
             f"{item['item_id']}:{item['qty_on_hand']}:{item['reorder_threshold']}" for item in stock_notifications
         )
@@ -205,7 +208,8 @@ def home():
         )
         context = dict(page=page,user=user,stats=stats,items=items,suppliers=suppliers,shelves=shelves,
                        request_submission=request_submission,stock_notifications=stock_notifications,
-                       notification_key=notification_key,show_stock_alerts=show_stock_alerts)
+                       notification_key=notification_key,show_stock_alerts=show_stock_alerts,
+                       stock_out_count=stock_out_count,stock_low_count=stock_low_count)
         if page == "dashboard":
             if user["role"] == "personnel":
                 context["recent"] = all_rows("""SELECT r.request_id,MIN(l.log_id) first_log_id,
@@ -362,7 +366,7 @@ def home():
                 FROM users u LEFT JOIN office_personnel p ON p.personnel_id=u.personnel_id LEFT JOIN inventory_admin a ON a.admin_id=u.admin_id
                 ORDER BY u.role,u.email""")
         return render_template("app.html", **context)
-    except pymysql.MySQLError as exc:
+    except DATABASE_ERROR_TYPES as exc:
         app.logger.exception("Database connection failed")
         return render_template("setup_error.html", error=str(exc)), 503
 
@@ -373,7 +377,7 @@ def login():
     email = request.form.get("email", "").strip().lower()
     try:
         user_record = authentication.authenticate(email, request.form.get("password", ""))
-    except pymysql.MySQLError as exc:
+    except DATABASE_ERROR_TYPES as exc:
         return render_template("setup_error.html", error=str(exc)), 503
     requested_role = request.form.get("role", "personnel")
     if not user_record or user_record.role != requested_role:
@@ -625,9 +629,9 @@ def action(action: str):
     except Exception as exc:
         if conn:
             conn.rollback()
-        if isinstance(exc, (ValueError, pymysql.MySQLError)):
+        if isinstance(exc, (ValueError,) + DATABASE_ERROR_TYPES):
             app.logger.info("Action failed: %s", exc)
-            message = "A record with that email or shelf number already exists." if isinstance(exc,pymysql.IntegrityError) else str(exc)
+            message = "A record with that email or shelf number already exists." if isinstance(exc, INTEGRITY_ERROR_TYPES) else str(exc)
             flash(message, "error")
         else:
             raise

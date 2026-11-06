@@ -469,3 +469,26 @@ body :is(p,small,label,button,input,select,textarea,th,td,a,span,li):not(.cart-q
 .confirm-close,.submission-success-modal .modal-close{top:8px;right:8px;width:32px;height:32px;min-height:32px;padding:0}
 .request-flow-header h2 svg{display:none!important}
 body :is(p,small,label,button,input,select,textarea,th,td,a,span,li,b,strong,i,summary,em,code,legend,output):not(.cart-quantity-button):not(.cart-remove-button):not(.modal-close){font-size:max(12px,.857em)!important}
+.modal input::placeholder,.modal textarea::placeholder,.login-card input::placeholder{font-style:italic}
+.modal select:has(option:checked[value=""]){font-style:italic;color:#a2aaba}
+.modal select option[value=""]{font-style:italic;color:#a2aaba}
+.modal{position:relative}
+.modal-header{position:relative;padding-right:38px}
+.modal-header .modal-close{position:absolute;top:2px;right:2px;width:32px;height:32px;min-height:32px;margin:0;padding:0}
+.confirm-dialog .confirm-close,.submission-success-modal>.modal-close{top:24px;right:24px;width:32px;height:32px;min-height:32px;padding:0}
+.confirm-dialog{width:min(100%,400px);padding:26px 22px 22px}
+.confirm-dialog .confirm-actions{padding:0}
+.archive-item-confirm .confirm-dialog,.archive-shelf-confirm .confirm-dialog{width:min(100%,348px);padding:26px 22px 22px}
+.archive-supplier-confirm .confirm-dialog{width:min(100%,383px);padding:26px 22px 22px}
+.archive-supplier-confirm .confirm-submit-button{width:180px}
+.archive-item-confirm .confirm-keep-button,.archive-item-confirm .confirm-submit-button,.archive-shelf-confirm .confirm-keep-button,.archive-shelf-confirm .confirm-submit-button{width:145px}
+.archive-shelf-confirm .confirm-dialog{width:min(100%,348px)}
+.shelf-entry-modal{max-width:360px!important}
+.transaction-stock-fields{grid-column:span 2;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 13px}
+.transaction-stock-fields label{min-width:0}
+.notice.stock-alert-notice{display:flex;align-items:center;justify-content:space-between;gap:16px;background:#fff7e9;border-color:#f5dfba;color:#8f5a0b}
+.notice.stock-alert-notice.has-out-of-stock{background:#fff2f2;border-color:#f4d5d7;color:#a7353e}
+.notice.stock-alert-notice a{margin-left:5px;color:#1649c9;font-weight:700;text-decoration:underline}
+.notice.stock-alert-notice button{top:50%;transform:translateY(-50%)}
+@media(max-width:600px){.transaction-stock-fields{grid-template-columns:1fr;gap:0}.transaction-stock-fields{grid-column:span 2}.archive-supplier-confirm .confirm-dialog{width:min(100%,383px)}.archive-supplier-confirm .confirm-actions,.archive-item-confirm .confirm-actions,.archive-shelf-confirm .confirm-actions{gap:8px}.archive-supplier-confirm .confirm-keep-button,.archive-supplier-confirm .confirm-submit-button,.archive-item-confirm .confirm-keep-button,.archive-item-confirm .confirm-submit-button,.archive-shelf-confirm .confirm-keep-button,.archive-shelf-confirm .confirm-submit-button{width:auto;flex:1}}
+@media(max-width:400px){.transaction-stock-fields{grid-column:auto}}

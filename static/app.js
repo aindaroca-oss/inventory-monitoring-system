@@ -31,9 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const willOpen = notificationPanel?.hidden;
     setNotificationsOpen(Boolean(willOpen), true);
   });
-  if (notificationToggle?.dataset.autoOpen === 'true' && !(notificationSeenKey && sessionStorage.getItem(notificationSeenKey))) {
-    setNotificationsOpen(true);
-  }
   document.addEventListener('click', event => {
     if (notificationPanel && !notificationPanel.hidden && !event.target.closest('.notification-menu')) {
       setNotificationsOpen(false, true);
@@ -94,6 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const confirmMessage = document.getElementById('action-confirm-message');
   const confirmCancel = confirmBackdrop?.querySelector('.confirm-keep-button');
   const confirmSubmit = document.getElementById('confirm-action-submit');
+  const archiveConfirmVariants = ['archive-item-confirm', 'archive-supplier-confirm', 'archive-shelf-confirm'];
+  const clearArchiveConfirmVariant = () => archiveConfirmVariants.forEach(name => confirmBackdrop?.classList.remove(name));
   let pendingConfirmForm = null;
   let pendingConfirmAction = null;
   const showConfirmation = (title, message, cancelLabel, submitLabel, action) => {
@@ -104,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmCancel) confirmCancel.textContent = cancelLabel;
     if (confirmSubmit) confirmSubmit.textContent = submitLabel;
     confirmBackdrop?.classList.remove('logout-confirm');
+    clearArchiveConfirmVariant();
     confirmBackdrop?.classList.add('danger-confirm', 'visible');
   };
   document.querySelectorAll('[data-confirm-modal]').forEach(form => form.addEventListener('submit', event => {
@@ -116,12 +116,20 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confirmSubmit) confirmSubmit.textContent = form.dataset.confirmSubmit || 'Confirm';
     confirmBackdrop?.classList.toggle('danger-confirm', form.dataset.confirmTone === 'danger');
     confirmBackdrop?.classList.toggle('logout-confirm', form.dataset.confirmTone === 'logout');
+    clearArchiveConfirmVariant();
+    const archiveVariant = {
+      'Archive Item?': 'archive-item-confirm',
+      'Archive Supplier?': 'archive-supplier-confirm',
+      'Archive Shelf?': 'archive-shelf-confirm',
+    }[form.dataset.confirmTitle];
+    if (archiveVariant) confirmBackdrop?.classList.add(archiveVariant);
     confirmBackdrop?.classList.add('visible');
   }));
   document.querySelectorAll('[data-confirm-dismiss]').forEach(button => button.addEventListener('click', () => {
     pendingConfirmForm = null;
     pendingConfirmAction = null;
     confirmBackdrop?.classList.remove('visible', 'danger-confirm', 'logout-confirm');
+    clearArchiveConfirmVariant();
   }));
   confirmSubmit?.addEventListener('click', () => {
     const form = pendingConfirmForm;
@@ -129,6 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingConfirmForm = null;
     pendingConfirmAction = null;
     confirmBackdrop?.classList.remove('visible', 'danger-confirm', 'logout-confirm');
+    clearArchiveConfirmVariant();
     if (form) form.submit();
     else action?.();
   });
@@ -423,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (stockUnitCost) stockUnitCost.value = option?.dataset.cost || '';
     if (stockUnitSelect) {
       const unit = option?.dataset.unit || '';
-      stockUnitSelect.replaceChildren(new Option(unit || 'Select Item First', unit));
+      stockUnitSelect.replaceChildren(new Option(unit || 'Select item first', unit));
       stockUnitSelect.disabled = !unit;
     }
   };
