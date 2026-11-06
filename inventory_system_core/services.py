@@ -23,7 +23,7 @@ class AuthenticationService:
             """SELECT u.*,p.personnel_name,p.department,a.admin_name FROM users u
             LEFT JOIN office_personnel p ON p.personnel_id=u.personnel_id
             LEFT JOIN inventory_admin a ON a.admin_id=u.admin_id
-            WHERE u.email=%s AND u.active=1 LIMIT 1""",
+            WHERE u.email=? AND u.active=1 LIMIT 1""",
             (email.strip().lower(),),
         )
         if not row or not check_password_hash(row["password_hash"], password):
@@ -40,7 +40,7 @@ class InventoryService:
     def record_low_stock_transition(self, connection, item_id: int):
         """Persist one unique alert for an item's transition below its threshold."""
         with connection.cursor() as cursor:
-            cursor.execute("SELECT * FROM item WHERE item_id=%s FOR UPDATE", (item_id,))
+            cursor.execute("SELECT * FROM item WHERE item_id=?", (item_id,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -48,12 +48,12 @@ class InventoryService:
             if item.is_low_stock and not item.low_stock_active:
                 episode = item.low_stock_episode + 1
                 cursor.execute(
-                    "UPDATE item SET low_stock_active=1,low_stock_episode=%s WHERE item_id=%s",
+                    "UPDATE item SET low_stock_active=1,low_stock_episode=? WHERE item_id=?",
                     (episode, item.item_id),
                 )
                 cursor.execute(
                     """INSERT INTO low_stock_alert(item_id,episode_no,quantity_at_trigger,threshold_at_trigger)
-                    VALUES(%s,%s,%s,%s)""",
+                    VALUES(?,?,?,?)""",
                     (item.item_id, episode, item.qty_on_hand, item.reorder_threshold),
                 )
                 return {
@@ -61,7 +61,7 @@ class InventoryService:
                     "qty": item.qty_on_hand, "threshold": item.reorder_threshold,
                 }
             if not item.is_low_stock and item.low_stock_active:
-                cursor.execute("UPDATE item SET low_stock_active=0 WHERE item_id=%s", (item.item_id,))
+                cursor.execute("UPDATE item SET low_stock_active=0 WHERE item_id=?", (item.item_id,))
         return None
 
     def fulfill_request(self, connection, request_row: dict[str, Any], admin_id: int):
@@ -69,18 +69,18 @@ class InventoryService:
             if request_row["status"] != "Approved":
                 raise ValueError("Approve this request before fulfilling it.")
             cursor.execute(
-                "SELECT qty_on_hand FROM item WHERE item_id=%s AND archived_at IS NULL FOR UPDATE",
+                "SELECT qty_on_hand FROM item WHERE item_id=? AND archived_at IS NULL",
                 (request_row["item_id"],),
             )
             item = cursor.fetchone()
             if not item or item["qty_on_hand"] < request_row["item_qty"]:
                 raise ValueError("There is not enough stock to fulfill this request.")
             cursor.execute(
-                "UPDATE item SET qty_on_hand=qty_on_hand-%s WHERE item_id=%s",
+                "UPDATE item SET qty_on_hand=qty_on_hand-? WHERE item_id=?",
                 (request_row["item_qty"], request_row["item_id"]),
             )
             cursor.execute(
-                "UPDATE transaction_log SET status='Fulfilled',admin_id=%s WHERE log_id=%s",
+                "UPDATE transaction_log SET status='Fulfilled',admin_id=? WHERE log_id=?",
                 (admin_id, request_row["log_id"]),
             )
         return self.record_low_stock_transition(connection, request_row["item_id"])
@@ -113,8 +113,8 @@ class InventoryService:
             error = str(exc)[:255]
         with self.database.connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                """UPDATE low_stock_alert SET delivery_status=%s,delivered_at=%s,last_error=%s
-                WHERE alert_id=%s AND delivery_status='pending'""",
+                """UPDATE low_stock_alert SET delivery_status=?,delivered_at=?,last_error=?
+                WHERE alert_id=? AND delivery_status='pending'""",
                 (status, delivered, error, alert["alert_id"]),
             )
             connection.commit()

@@ -1,50 +1,25 @@
-# PythonAnywhere Free Demo Deployment
+# PythonAnywhere Deployment — SQLite Only
 
-This guide deploys the Flask/Jinja application with a separate SQLite copy of
-the local MySQL data. The MySQL backend remains available for local use. The
-migration script only reads MySQL and refuses to overwrite an existing SQLite
-file.
+The Flask application now uses SQLite exclusively. Its database file is separate from the source code and is never recreated by app startup. Keep the existing PythonAnywhere SQLite file at its current path; do not run `schema.sql` against it or upload another file over it.
 
-## 1. Create a SQLite copy locally
+## 1. Update the code
 
-Keep your existing MySQL database and its export as backups. Start MySQL in
-XAMPP and set the source connection values in PowerShell from this project
-folder:
+Push the project changes to GitHub, then open a PythonAnywhere Bash console and pull the repository:
 
-```powershell
-$env:DB_HOST = "127.0.0.1"
-$env:DB_PORT = "3306"
-$env:DB_NAME = "dunder_inventory"
-$env:DB_USER = "root"
-$env:DB_PASS = ""
-python migrate_mysql_to_sqlite.py --output .\dunder_inventory_demo.sqlite3
+```bash
+cd ~/InventorySystem
+git pull origin main
 ```
 
-Use your actual local MySQL username/password if they differ. The script
-prints row counts for all nine tables and checks foreign keys. It performs
-SELECTs only on MySQL. The output file is a separate demo copy and is ignored
-by Git (`*.sqlite3`). Do not commit this database file because it contains
-account email addresses and password hashes.
+If the repository has not been cloned on PythonAnywhere yet, clone it once instead:
 
-If the output path already exists, the script stops without overwriting it.
-Choose a new output name or move the old demo copy aside before creating a new
-one.
+```bash
+git clone https://github.com/aindaroca-oss/inventory-monitoring-system.git ~/InventorySystem
+```
 
-## 2. Upload the project and SQLite file
+## 2. Install the app requirements
 
-Push the code changes to the GitHub repository, then in PythonAnywhere use a
-Bash console to clone or pull the repository into a folder such as
-`/home/YOUR_USERNAME/InventorySystem`. Do not upload the local `.venv` folder.
-
-Upload `dunder_inventory_demo.sqlite3` separately using PythonAnywhere's Files
-page, placing it at `/home/YOUR_USERNAME/dunder_inventory_demo.sqlite3`. Keep
-the MySQL export and local MySQL database on your own computer.
-
-## 3. Create the web app and virtual environment
-
-In PythonAnywhere, open **Web → Add a new web app**, choose the free
-`YOUR_USERNAME.pythonanywhere.com` domain, then select manual configuration and
-Python 3.13. In a Bash console, create and populate a virtual environment:
+Use the Python version selected on the Web tab. For Python 3.13:
 
 ```bash
 mkvirtualenv --python=/usr/bin/python3.13 inventory-system
@@ -53,14 +28,11 @@ cd ~/InventorySystem
 pip install -r requirements.txt
 ```
 
-On the Web tab, set the virtualenv to
-`/home/YOUR_USERNAME/.virtualenvs/inventory-system`.
+If the `inventory-system` virtualenv already exists, just run `workon inventory-system` and install the requirements again.
 
-## 4. Configure the WSGI file
+## 3. Set up the WSGI file
 
-Open the WSGI configuration file linked from the Web tab. Replace its Flask
-section with the following, substituting your PythonAnywhere username and a
-new secret generated for the hosted app:
+On the Web tab, open the WSGI configuration file and set the project path, runtime mode, SQLite path, and a private session secret before importing the Flask app:
 
 ```python
 import os
@@ -71,44 +43,27 @@ if project_home not in sys.path:
     sys.path.insert(0, project_home)
 
 os.environ["APP_ENV"] = "production"
-os.environ["DB_BACKEND"] = "sqlite"
 os.environ["SQLITE_PATH"] = "/home/YOUR_USERNAME/dunder_inventory_demo.sqlite3"
-os.environ["SECRET_KEY"] = "REPLACE_WITH_A_LONG_RANDOM_SECRET"
+os.environ["SECRET_KEY"] = "PASTE_A_NEW_PRIVATE_RANDOM_SECRET_HERE"
 
 from inventory_system import app as application
 ```
 
-Generate the secret in a local PowerShell window with:
+Replace `YOUR_USERNAME` with the PythonAnywhere account username. Keep the secret in the private WSGI file; never put it in the repository. The app no longer uses `DB_BACKEND`, `DB_HOST`, or any MySQL settings.
 
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
+If your existing SQLite database is already at a different path, use its current path in `SQLITE_PATH`. Do not upload a second database over it.
 
-Keep the secret in the private PythonAnywhere WSGI configuration, never in
-GitHub. The production setting enables secure session cookies. PythonAnywhere
-loads this app through WSGI; do not start it with `python inventory_system.py`
-on the host.
+## 4. Configure static files and reload
 
-## 5. Serve static files and reload
-
-On the Web tab, add a static files mapping:
+On the Web tab, set the virtualenv to `/home/YOUR_USERNAME/.virtualenvs/inventory-system` and add this static files mapping:
 
 - URL: `/static/`
 - Directory: `/home/YOUR_USERNAME/InventorySystem/static`
 
-Save the WSGI file, then click **Reload** on the Web tab. The public URL is
-`https://YOUR_USERNAME.pythonanywhere.com`.
+Save the WSGI file and click **Reload**. The public URL is `https://YOUR_USERNAME.pythonanywhere.com` (or the regional domain shown on your PythonAnywhere account).
 
-## 6. Verify the demo
+## 5. Verify the deployment
 
-Check both staff and admin login, session continuity, inventory, suppliers,
-shelves, supply requests, approvals, cancellations, fulfillment, transaction
-history, and low-stock records. Compare the printed MySQL/SQLite row counts
-before uploading. Do not run `seed-demo` against the migrated database.
+Check staff and admin login, session continuity, inventory, suppliers, shelves, supply requests, approvals, cancellations, fulfillment, transaction history, and low-stock records. If the site returns an error, check **Web → Log files → error log** first.
 
-PythonAnywhere Free includes one web app and one worker, and its free accounts
-have a 512 MiB disk quota. SQLite runs on PythonAnywhere's filesystem and can
-be slower than MySQL; this is intended for a low-traffic coursework demo, not
-production use. Free-account outbound internet is restricted, so SMTP email
-alerts may not deliver. Keep the local MySQL database and export as the
-authoritative backup.
+The Free plan is intended for a small demonstration. SQLite uses the account filesystem, and PythonAnywhere Free has limited CPU, disk, and worker capacity. SMTP email delivery may also be limited by free-account outbound-network restrictions. Keep a separate backup of the SQLite file.

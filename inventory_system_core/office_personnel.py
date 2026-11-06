@@ -35,8 +35,8 @@ class OfficePersonnel:
         with connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO transaction_log(request_id,item_id,personnel_id,item_qty,transaction_type,status,unit_cost_at_time,required_date,notes)
-                SELECT %s,item_id,%s,%s,'Stock Out','Pending',baseline_unit_cost,%s,%s
-                FROM item WHERE item_id=%s AND archived_at IS NULL""",
+                SELECT ?,item_id,?,?,'Stock Out','Pending',baseline_unit_cost,?,?
+                FROM item WHERE item_id=? AND archived_at IS NULL""",
                 (request_id, self.personnel_id, item_qty, required_date.replace(hour=17).strftime("%Y-%m-%d %H:%M:%S"), notes, item_id),
             )
             if not cursor.rowcount:

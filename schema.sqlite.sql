@@ -1,5 +1,5 @@
--- SQLite schema for a separate PythonAnywhere demo copy.
--- This database is created from a COPY of dunder_inventory; it does not replace MySQL.
+-- SQLite schema for a new Inventory System database.
+-- Do not execute this against an existing database; it creates the tables.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE supplier (

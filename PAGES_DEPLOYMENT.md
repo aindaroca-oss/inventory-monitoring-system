@@ -2,9 +2,9 @@
 
 ## Current state
 
-This repository contains a Flask/Jinja application. Its HTML templates call Flask routes, use Flask sessions, and load inventory from MySQL. GitHub Pages cannot execute Flask, Python, or MySQL, so publishing the current templates as static files would leave login, inventory, requests, transactions, and administration nonfunctional.
+This repository contains a Flask/Jinja application. Its HTML templates call Flask routes, use Flask sessions, and load inventory from SQLite. GitHub Pages cannot execute Flask, Python, or SQLite, so publishing the current templates as static files would leave login, inventory, requests, transactions, and administration nonfunctional.
 
-The source project is prepared for the deployment split, but the Pages site and automatic workflow are not active yet. First extract the existing UI into a static frontend that calls a cloud-hosted HTTP API. Keep the Flask service and MySQL on separate cloud hosting. The frontend build must not contain database credentials, SMTP credentials, session secrets, or other private keys.
+The current plan is to host the complete Flask + SQLite application on PythonAnywhere. GitHub Pages is only suitable if the UI is later rebuilt as a static frontend that calls an HTTP API. The frontend build must not contain database credentials, SMTP credentials, session secrets, or other private keys.
 
 ## GitHub Pages target
 
@@ -15,9 +15,9 @@ The target repository is [`aindaroca-oss/inventory-monitoring-system`](https://g
 ## API and secrets
 
 - Configure only a public API base URL in the frontend, for example `https://api.example.com`; it is safe to be visible in browser source.
-- Keep `SECRET_KEY`, `DB_PASS`, SMTP credentials, and any API signing keys in the backend hosting provider's secret/environment settings.
+- Keep `SECRET_KEY`, SMTP credentials, and any API signing keys in the backend hosting provider's secret/environment settings.
 - Use HTTPS for the backend API and restrict CORS to the exact Pages origin once the username is known.
-- Use managed MySQL on the backend side; do not put database connection values in Pages settings or frontend files.
+- Keep the SQLite database file on the backend host; do not put the database file or its contents in Pages artifacts or frontend files.
 - Keep `.env` files out of Git. `.env.example` contains blank placeholders only.
 
 ## Before the first deployment
@@ -26,4 +26,4 @@ The target repository is [`aindaroca-oss/inventory-monitoring-system`](https://g
 2. Convert the current Jinja pages into a static frontend while preserving the existing design and interactions.
 3. Add the HTTP API/authentication layer and configure its Pages origin for CORS and session/token handling.
 4. Add the Pages workflow to build and deploy the static frontend on pushes to `main`.
-5. Deploy the Flask API and MySQL separately, then configure the frontend with the public API URL.
+5. If a static Pages frontend is still desired, deploy the Flask API and SQLite database on a separate backend host, then configure the frontend with the public API URL.

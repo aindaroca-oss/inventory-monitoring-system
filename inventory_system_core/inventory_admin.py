@@ -37,7 +37,7 @@ class InventoryAdmin:
             raise ValueError("Only pending requests can be approved.")
         with connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE transaction_log SET status='Approved',admin_id=%s WHERE log_id=%s",
+                "UPDATE transaction_log SET status='Approved',admin_id=? WHERE log_id=?",
                 (self.admin_id, request_row["log_id"]),
             )
 
@@ -46,7 +46,7 @@ class InventoryAdmin:
             raise ValueError("This request can no longer be declined.")
         with connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE transaction_log SET status='Declined',admin_id=%s WHERE log_id=%s",
+                "UPDATE transaction_log SET status='Declined',admin_id=? WHERE log_id=?",
                 (self.admin_id, request_row["log_id"]),
             )
 
