@@ -80,24 +80,68 @@ def inject_globals():
 
 
 @app.template_filter("date_short")
-def date_short(value: date) -> str:
-    return f"{value.strftime('%b')} {value.day}, {value.year}"
+def date_short(value: date | datetime | str | None) -> str:
+    parsed = coerce_datetime(value)
+    if parsed is None:
+        return "—"
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
 
 
 @app.template_filter("date_time")
-def date_time(value: datetime) -> str:
-    hour = value.hour % 12 or 12
-    suffix = "AM" if value.hour < 12 else "PM"
-    return f"{value.strftime('%b')} {value.day}, {value.year} · {hour}:{value.minute:02d} {suffix}"
+def date_time(value: date | datetime | str | None) -> str:
+    parsed = coerce_datetime(value)
+    if parsed is None:
+        return "—"
+    hour = parsed.hour % 12 or 12
+    suffix = "AM" if parsed.hour < 12 else "PM"
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year} · {hour}:{parsed.minute:02d} {suffix}"
 
 
-def request_display_id(requested_at: datetime, first_log_id: int) -> str:
-    return f"SOUT-{requested_at:%Y%m}{int(first_log_id):04d}"
+@app.template_filter("date_sort")
+def date_sort(value: date | datetime | str | None) -> str:
+    parsed = coerce_datetime(value)
+    return parsed.strftime("%Y%m%d%H%M%S") if parsed else ""
 
 
-def transaction_display_id(transaction_type: str, transaction_date: datetime, first_log_id: int) -> str:
+def coerce_datetime(value: date | datetime | str | None) -> datetime | None:
+    """Normalize MySQL/Python dates and SQLite aggregate date strings."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            try:
+                return datetime.combine(date.fromisoformat(text), datetime.min.time())
+            except ValueError:
+                return None
+    return None
+
+
+def request_display_id(requested_at: date | datetime | str, first_log_id: int) -> str:
+    parsed = coerce_datetime(requested_at)
+    if parsed is None:
+        raise ValueError(f"Invalid request date for display ID: {requested_at!r}")
+    return f"SOUT-{parsed:%Y%m}{int(first_log_id):04d}"
+
+
+def transaction_display_id(transaction_type: str, transaction_date: date | datetime | str, first_log_id: int) -> str:
     prefix = "SIN" if transaction_type == "Stock In" else "SOUT"
-    return f"{prefix}-{transaction_date:%Y%m}{int(first_log_id):04d}"
+    parsed = coerce_datetime(transaction_date)
+    if parsed is None:
+        raise ValueError(f"Invalid transaction date for display ID: {transaction_date!r}")
+    return f"{prefix}-{parsed:%Y%m}{int(first_log_id):04d}"
 
 
 def check_csrf() -> None:
