@@ -28,11 +28,26 @@ sqlite3.register_converter("TIMESTAMP", _parse_sqlite_datetime)
 class _ClosingSQLiteConnection(sqlite3.Connection):
     """Keep the app's connection context managers short lived."""
 
+    def cursor(self, factory=sqlite3.Cursor):
+        """Return cursors that can be safely used with ``with`` statements."""
+        return super().cursor(factory=_ClosingSQLiteCursor if factory is sqlite3.Cursor else factory)
+
     def __exit__(self, exc_type, exc_value, traceback):
         try:
             return super().__exit__(exc_type, exc_value, traceback)
         finally:
             self.close()
+
+
+class _ClosingSQLiteCursor(sqlite3.Cursor):
+    """Match the context-manager behavior expected by the app's DB helpers."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+        return False
 
 
 class _DistinctGroupConcat:
