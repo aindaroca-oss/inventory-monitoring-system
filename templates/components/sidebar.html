@@ -1,0 +1,18 @@
+<aside class="sidebar" id="sidebar">
+  <a class="side-brand" href="{{ url_for('home') }}"><img class="side-brand-logo" src="{{ url_for('static',filename='images/Dunder_Mifflin_Logo2.png') }}" alt=""><span><b>DUNDER MIFFLIN</b><small>Office Inventory System</small></span></a>
+  <div class="side-label">WORKSPACE</div>
+  <nav class="side-nav">
+    <a class="{{ 'active' if page=='dashboard' }}" href="{{ url_for('home') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/></svg></span>Dashboard</a>
+    {% if user.role=='personnel' %}<a class="inventory-nav-link {{ 'active' if page=='inventory' }}" href="{{ url_for('home',page='inventory') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5M3 8v9l9 5 9-5V8M12 13v9"/></svg></span>Inventory {% if stats.low_stock or stats.out_of_stock %}<span class="nav-alert-dots" aria-label="{{ stats.low_stock }} low stock, {{ stats.out_of_stock }} out of stock">{% if stats.low_stock %}<i class="nav-dot nav-dot-low" title="Low stock"></i>{% endif %}{% if stats.out_of_stock %}<i class="nav-dot nav-dot-out" title="Out of stock"></i>{% endif %}</span>{% endif %}</a>{% endif %}
+    <a class="{{ 'active' if page=='requests' }}" href="{{ url_for('home',page='requests') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8l4 4v14H4V3h4ZM15 3v5h5M8 12h8M8 16h5"/></svg></span>{{ 'My Requests' if user.role=='personnel' else 'Supply Requests' }}{% if user.role=='admin' and stats.pending %}<span class="nav-dot"></span>{% endif %}</a>
+    {% if user.role=='admin' %}
+    <div class="side-label side-label-spaced">MANAGEMENT</div>
+    <a class="inventory-nav-link {{ 'active' if page=='inventory' }}" href="{{ url_for('home',page='inventory') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 8 9 5 9-5M3 8v9l9 5 9-5V8M12 13v9"/></svg></span>Inventory {% if stats.low_stock or stats.out_of_stock %}<span class="nav-alert-dots" aria-label="{{ stats.low_stock }} low stock, {{ stats.out_of_stock }} out of stock">{% if stats.low_stock %}<i class="nav-dot nav-dot-low" title="Low stock"></i>{% endif %}{% if stats.out_of_stock %}<i class="nav-dot nav-dot-out" title="Out of stock"></i>{% endif %}</span>{% endif %}</a>
+    <a class="{{ 'active' if page=='transactions' }}" href="{{ url_for('home',page='transactions') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3l4 4-4 4M20 7H4m4 14-4-4 4-4M4 17h16"/></svg></span>Transactions</a>
+    <a class="{{ 'active' if page=='suppliers' }}" href="{{ url_for('home',page='suppliers') }}"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17h4V5H2v12h3m14 0h3v-6l-3-4h-5"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/><path d="M14 8h4l2 3"/></svg></span>Suppliers & shelves</a>
+    {% endif %}
+  </nav>
+  <div class="sidebar-bottom">
+    <form method="post" action="{{ url_for('logout') }}" class="sidebar-logout" data-confirm-modal data-confirm-title="Log out of your account?" data-confirm-message="" data-confirm-cancel="Cancel" data-confirm-submit="Log out" data-confirm-tone="logout"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button secondary" title="Log out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M8 12h10"/></svg>Log out</button></form>
+  </div>
+</aside>
