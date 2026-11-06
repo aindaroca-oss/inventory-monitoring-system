@@ -4,11 +4,12 @@ import hmac
 import json
 import os
 import secrets
+import sqlite3
 from datetime import date, datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import generate_password_hash
 
 from inventory_system_core import (
@@ -65,6 +66,21 @@ def ensure_reference_archive_columns() -> None:
                 cursor.execute(f"ALTER TABLE {table} ADD COLUMN archived_at DATETIME NULL")
         cursor.execute("UPDATE supplier SET email='orders@staples-officesupplies.test' WHERE email='staples@example.test'")
         cursor.execute("UPDATE supplier SET email='sales@quilloffice.test' WHERE email='quill@example.test'")
+        connection.commit()
+
+
+def ensure_request_cart_table() -> None:
+    """Add the per-personnel request-cart table to existing SQLite databases."""
+    with database.connect() as connection, connection.cursor() as cursor:
+        cursor.execute("""CREATE TABLE IF NOT EXISTS request_cart_item (
+            personnel_id INTEGER NOT NULL,
+            item_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL CHECK(quantity BETWEEN 1 AND 9999),
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(personnel_id,item_id),
+            FOREIGN KEY(personnel_id) REFERENCES office_personnel(personnel_id) ON DELETE CASCADE,
+            FOREIGN KEY(item_id) REFERENCES item(item_id) ON DELETE CASCADE
+        )""")
         connection.commit()
 
 
@@ -146,7 +162,7 @@ def transaction_display_id(transaction_type: str, transaction_date: date | datet
 
 def check_csrf() -> None:
     expected = session.get("csrf", "")
-    supplied = request.form.get("csrf", "")
+    supplied = request.form.get("csrf", "") or request.headers.get("X-CSRF-Token", "")
     if not expected or not supplied or not hmac.compare_digest(expected, supplied):
         abort(400, "Your session expired. Refresh the page and try again.")
 
@@ -191,7 +207,7 @@ def positive_int(name: str, minimum: int = 0) -> int:
 @app.get("/")
 def home():
     if "user" not in session:
-        return render_template("login.html", login_error=None)
+        return render_template("login.html", login_error=None, login_email="", login_role="personnel")
     page = request.args.get("page", "dashboard")
     allowed = {"dashboard", "inventory", "requests", "transactions", "suppliers", "team"}
     if page not in allowed:
@@ -201,6 +217,7 @@ def home():
     user = session["user"]
     try:
         ensure_reference_archive_columns()
+        ensure_request_cart_table()
         request_submission = session.pop("request_submission", None) if page == "requests" and user["role"] == "personnel" else None
         stats = {
             "items": one("SELECT COUNT(*) n FROM item WHERE archived_at IS NULL")["n"],
@@ -224,6 +241,26 @@ def home():
                     WHERE r.personnel_id=? AND l.transaction_type='Stock Out'
                     GROUP BY r.request_id
                 ) request_statuses""", (user["personnel_id"],))
+            request_notifications = all_rows("""SELECT r.request_id,MIN(l.log_id) first_log_id,
+                    r.requested_at,r.required_date,r.reviewed_at,
+                    GROUP_CONCAT_DISTINCT(i.item_name,i.item_name,', ') item_names,
+                    CASE WHEN r.cancelled_at IS NOT NULL THEN 'Cancelled'
+                         WHEN SUM(l.status='Pending')>0 THEN 'Pending'
+                         WHEN SUM(l.status='Approved')>0 THEN 'Approved'
+                         WHEN SUM(l.status='Declined')>0 THEN 'Declined'
+                         ELSE 'Fulfilled' END status
+                FROM supply_request r
+                JOIN transaction_log l ON l.request_id=r.request_id
+                JOIN item i ON i.item_id=l.item_id
+                WHERE r.personnel_id=? AND l.transaction_type='Stock Out'
+                GROUP BY r.request_id
+                HAVING status IN ('Approved','Declined','Fulfilled')
+                ORDER BY COALESCE(r.reviewed_at,r.requested_at) DESC,r.request_id DESC LIMIT 8""",
+                (user["personnel_id"],))
+            for request_update in request_notifications:
+                request_update["request_code"] = request_display_id(
+                    request_update["requested_at"], request_update["first_log_id"]
+                )
             stats["pending_requests"] = request_counts["pending"]
             stats["approved_requests"] = request_counts["approved"]
             stats["fulfilled_requests"] = request_counts["fulfilled"]
@@ -234,6 +271,27 @@ def home():
         items = all_rows("""SELECT i.*,s.shelf_num,sp.supplier_name FROM item i
             JOIN shelf s ON s.shelf_id=i.shelf_id JOIN supplier sp ON sp.supplier_id=i.supplier_id
             WHERE i.archived_at IS NULL ORDER BY (i.qty_on_hand<=i.reorder_threshold) DESC,i.item_name""")
+        request_cart = []
+        if user["role"] == "personnel":
+            with connect_db() as cart_connection, cart_connection.cursor() as cart_cursor:
+                cart_cursor.execute("""UPDATE request_cart_item
+                    SET quantity=MIN(quantity,(SELECT qty_on_hand FROM item
+                        WHERE item.item_id=request_cart_item.item_id))
+                    WHERE personnel_id=? AND EXISTS (
+                        SELECT 1 FROM item WHERE item.item_id=request_cart_item.item_id
+                          AND item.archived_at IS NULL AND item.qty_on_hand>0
+                    )""", (user["personnel_id"],))
+                cart_cursor.execute("""DELETE FROM request_cart_item
+                    WHERE personnel_id=? AND NOT EXISTS (
+                        SELECT 1 FROM item WHERE item.item_id=request_cart_item.item_id
+                          AND item.archived_at IS NULL AND item.qty_on_hand>0
+                    )""", (user["personnel_id"],))
+                cart_cursor.execute("""SELECT cart.item_id,cart.quantity,item.item_name,item.unit_name,
+                        item.qty_on_hand stock_qty
+                    FROM request_cart_item cart JOIN item ON item.item_id=cart.item_id
+                    WHERE cart.personnel_id=? ORDER BY item.item_name""", (user["personnel_id"],))
+                request_cart = cart_cursor.fetchall()
+                cart_connection.commit()
         suppliers = all_rows("SELECT * FROM supplier WHERE archived_at IS NULL ORDER BY supplier_name")
         shelves = all_rows("SELECT * FROM shelf WHERE archived_at IS NULL ORDER BY shelf_num")
         stock_notifications = [
@@ -246,12 +304,24 @@ def home():
         notification_key = "stock-alerts-" + ",".join(
             f"{item['item_id']}:{item['qty_on_hand']}:{item['reorder_threshold']}" for item in stock_notifications
         )
+        if user["role"] == "personnel":
+            notification_items = request_notifications
+            notification_key = "request-updates-" + ",".join(
+                f"{row['request_id']}:{row['status']}:{row['reviewed_at']}" for row in request_notifications
+            )
+            notification_label = "request updates"
+        else:
+            notification_items = stock_notifications
+            notification_label = "stock alerts"
         show_stock_alerts = bool(
             user["role"] == "admin" and page == "dashboard" and session.pop("show_stock_alerts", False)
             and stock_notifications
         )
         context = dict(page=page,user=user,stats=stats,items=items,suppliers=suppliers,shelves=shelves,
+                       request_cart=request_cart,
                        request_submission=request_submission,stock_notifications=stock_notifications,
+                       notification_items=notification_items,notification_label=notification_label,
+                       request_notifications=request_notifications if user["role"] == "personnel" else [],
                        notification_key=notification_key,show_stock_alerts=show_stock_alerts,
                        stock_out_count=stock_out_count,stock_low_count=stock_low_count)
         if page == "dashboard":
@@ -431,8 +501,15 @@ def login():
     except DATABASE_ERROR_TYPES as exc:
         return render_template("setup_error.html", error=str(exc)), 503
     requested_role = request.form.get("role", "personnel")
+    if requested_role not in {"personnel", "admin"}:
+        requested_role = "personnel"
     if not user_record or user_record.role != requested_role:
-        return render_template("login.html", login_error="The email or password is incorrect."), 401
+        return render_template(
+            "login.html",
+            login_error="The email or password is incorrect.",
+            login_email=email,
+            login_role=requested_role,
+        ), 401
     session.clear()
     session["csrf"] = secrets.token_urlsafe(32)
     session.permanent = request.form.get("remember") == "on"
@@ -445,7 +522,6 @@ def login():
     }
     if user_record.role == "admin":
         session["show_stock_alerts"] = True
-    flash(f"Welcome back, {session['user']['name']}.")
     return redirect(url_for("home"))
 
 
@@ -455,6 +531,69 @@ def logout():
     check_csrf()
     session.clear()
     return redirect(url_for("home"))
+
+
+@app.post("/api/request-cart")
+@login_required
+def save_request_cart():
+    user = session["user"]
+    if user["role"] != "personnel":
+        abort(403)
+    check_csrf()
+    payload = request.get_json(silent=True)
+    lines = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(lines, list) or len(lines) > 50:
+        return jsonify(error="The request cart payload is invalid."), 400
+
+    quantities = {}
+    try:
+        for line in lines:
+            if not isinstance(line, dict):
+                raise ValueError("The request cart contains an invalid item.")
+            raw_item_id, raw_quantity = line.get("item_id"), line.get("quantity")
+            if isinstance(raw_item_id, bool) or isinstance(raw_quantity, bool):
+                raise ValueError("Cart item IDs and quantities must be whole numbers.")
+            item_id, quantity = int(raw_item_id), int(raw_quantity)
+            if item_id < 1 or quantity < 1 or quantity > 9999:
+                raise ValueError("Cart quantities must be between 1 and 9,999.")
+            quantities[item_id] = min(9999, quantities.get(item_id, 0) + quantity)
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+    try:
+        with connect_db() as connection, connection.cursor() as cursor:
+            connection.execute("BEGIN IMMEDIATE")
+            available = {}
+            if quantities:
+                placeholders = ",".join("?" for _ in quantities)
+                cursor.execute(f"""SELECT item_id,item_name,unit_name,qty_on_hand
+                    FROM item WHERE item_id IN ({placeholders})
+                      AND archived_at IS NULL AND qty_on_hand>0""", tuple(quantities))
+                available = {row["item_id"]: row for row in cursor.fetchall()}
+
+            saved_items = []
+            for item_id, quantity in quantities.items():
+                item = available.get(item_id)
+                if item:
+                    saved_items.append({
+                        "item_id": item_id,
+                        "item_name": item["item_name"],
+                        "unit_name": item["unit_name"],
+                        "stock_qty": item["qty_on_hand"],
+                        "quantity": min(quantity, item["qty_on_hand"]),
+                    })
+
+            cursor.execute("DELETE FROM request_cart_item WHERE personnel_id=?", (user["personnel_id"],))
+            cursor.executemany("""INSERT INTO request_cart_item(personnel_id,item_id,quantity)
+                VALUES(?,?,?)""", [
+                    (user["personnel_id"], item["item_id"], item["quantity"])
+                    for item in saved_items
+                ])
+            connection.commit()
+        return jsonify(ok=True, items=saved_items)
+    except DATABASE_ERROR_TYPES as exc:
+        app.logger.exception("Could not save the request cart")
+        return jsonify(error="Could not save your cart. Please try again."), 503
 
 
 @app.post("/action/<action>")
@@ -506,6 +645,7 @@ def action(action: str):
                 for item_id, qty in quantities.items():
                     request_log_ids.append(personnel.request_supply(conn, request_id, item_id, qty, required, purpose))
                 request_code = request_display_id(request_created_at, min(request_log_ids))
+                cur.execute("DELETE FROM request_cart_item WHERE personnel_id=?", (personnel.personnel_id,))
                 message = f"Supply request {request_code} submitted with {len(quantities)} item(s) for administrator review."
                 submission_summary = {
                     "request_code": request_code,
@@ -700,8 +840,8 @@ def seed_demo():
     """Create demo accounts and sample inventory in a freshly imported schema."""
     if os.getenv("APP_ENV", "development").lower() == "production":
         raise RuntimeError("Demo data seeding is disabled in production.")
-    admin_password = os.getenv("SEED_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
-    personnel_password = os.getenv("SEED_PERSONNEL_PASSWORD") or secrets.token_urlsafe(16)
+    admin_password = os.getenv("SEED_ADMIN_PASSWORD") or os.getenv("DEMO_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
+    personnel_password = os.getenv("SEED_PERSONNEL_PASSWORD") or os.getenv("DEMO_PERSONNEL_PASSWORD") or secrets.token_urlsafe(16)
     with connect_db() as conn, conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) n FROM users")
         if cur.fetchone()["n"]:
@@ -712,8 +852,8 @@ def seed_demo():
         cur.execute("INSERT INTO office_personnel(personnel_name,department) VALUES('Pam Beesly','Reception'),('Jim Halpert','Sales')")
         cur.execute("INSERT INTO inventory_admin(admin_name) VALUES('Michael Scott')")
         admin_id=cur.lastrowid
-        cur.execute("INSERT INTO users(email,password_hash,role,admin_id) VALUES(?,?,'admin',?)",('admin@dundermifflin.local',generate_password_hash(admin_password),admin_id))
-        for email,pid in [('pam@dundermifflin.local',1),('jim@dundermifflin.local',2)]:
+        cur.execute("INSERT INTO users(email,password_hash,role,admin_id) VALUES(?,?,'admin',?)",('michaelscott@dm.office',generate_password_hash(admin_password),admin_id))
+        for email,pid in [('pambeesly@dm.office',1),('jim@dundermifflin.local',2)]:
             cur.execute("INSERT INTO users(email,password_hash,role,personnel_id) VALUES(?,?,'personnel',?)",(email,generate_password_hash(personnel_password),pid))
         cur.execute("""INSERT INTO item(supplier_id,shelf_id,item_name,item_description,item_category,unit_name,qty_on_hand,reorder_threshold,baseline_unit_cost) VALUES
             (1,1,'HP LaserJet Toner','Black toner cartridge for the office printer.','Printing','Cartridge',12,5,89.99),
@@ -733,44 +873,131 @@ def seed_demo():
             ("Cancelled", ["Long Bond Paper", "HP LaserJet Toner"], 2, "These supplies are no longer needed for the monthly report.", "Cancelled by the requester before review."),
             ("Fulfilled", ["HP LaserJet Toner", "Copy Paper", "Black Ballpoint Pens", "Manila Folders", "Long Document Envelope"], 1, "Prepare printed copies and filing supplies for the quarterly report.", "Items were issued from the supply room and the request was fulfilled."),
         ]
-        for status, item_names, days_needed, notes, review_notes in demo_requests:
-            required = (datetime.now() + timedelta(days=days_needed)).replace(hour=17, minute=0, second=0, microsecond=0)
-            cancelled_at = datetime.now() if status == "Cancelled" else None
+        demo_dates = secrets.SystemRandom().sample(range(2, 30), len(demo_requests))
+        for (status, item_names, days_needed, notes, review_notes), days_ago in zip(demo_requests, demo_dates):
+            requested_at = (datetime.now() - timedelta(days=days_ago)).replace(hour=9, minute=30, second=0, microsecond=0)
+            required = requested_at + timedelta(days=days_needed)
             reviewed_by = admin_id if status in {"Approved", "Declined", "Fulfilled"} else None
-            reviewed_at = datetime.now() if status != "Pending" else None
+            reviewed_at = requested_at + timedelta(days=1) if status != "Pending" else None
+            cancelled_at = reviewed_at if status == "Cancelled" else None
             cur.execute("""INSERT INTO supply_request(personnel_id,requested_at,required_date,notes,cancelled_at,
                     reviewed_by_admin_id,reviewed_at,review_notes)
-                VALUES(1,CURRENT_TIMESTAMP,?,?,?,?,?,?)""",
-                (required, notes, cancelled_at, reviewed_by, reviewed_at, review_notes))
+                VALUES(1,?,?,?,?,?,?,?)""",
+                (requested_at, required, notes, cancelled_at, reviewed_by, reviewed_at, review_notes))
             request_id = cur.lastrowid
             line_status = "Declined" if status == "Cancelled" else status
             for item_name in item_names:
                 item_id = demo_item_ids[item_name]
-                cur.execute("""INSERT INTO transaction_log(request_id,item_id,personnel_id,item_qty,transaction_type,status,unit_cost_at_time,required_date,notes)
-                    SELECT ?,item_id,1,1,'Stock Out',?,baseline_unit_cost,?,?
-                    FROM item WHERE item_id=?""", (request_id, line_status, required, notes, item_id))
+                cur.execute("""INSERT INTO transaction_log(request_id,item_id,personnel_id,item_qty,transaction_type,status,
+                        unit_cost_at_time,required_date,notes,transaction_date)
+                    SELECT ?,item_id,1,1,'Stock Out',?,baseline_unit_cost,?,?,?
+                    FROM item WHERE item_id=?""", (request_id, line_status, required, notes, requested_at, item_id))
         admin_activity_items = ["HP LaserJet Toner", "Black Ballpoint Pens", "Manila Folders"]
+        admin_activity_dates = iter(secrets.SystemRandom().sample(range(1, 30), len(admin_activity_items) * 2))
         for index, item_name in enumerate(admin_activity_items, start=1):
             demo_item = demo_items[item_name]
             for transaction_type in ("Stock In", "Stock Out"):
+                activity_date = (datetime.now() - timedelta(days=next(admin_activity_dates))).replace(
+                    hour=10 + index, minute=15, second=0, microsecond=0
+                )
                 # Pair the sample movements so they leave the seeded inventory quantity unchanged.
                 delta = 1 if transaction_type == "Stock In" else -1
                 cur.execute("UPDATE item SET qty_on_hand=qty_on_hand+? WHERE item_id=?", (delta, demo_item["item_id"]))
                 cur.execute("""INSERT INTO transaction_log(item_id,admin_id,supplier_id,item_qty,transaction_type,status,
-                        unit_cost_at_time,required_date,notes)
-                    VALUES(?,?,?,1,?,'Fulfilled',?,CURRENT_TIMESTAMP,?)""",
+                        unit_cost_at_time,required_date,notes,transaction_date)
+                    VALUES(?,?,?,1,?,'Fulfilled',?,?,?,?)""",
                     (demo_item["item_id"], admin_id, demo_item["supplier_id"] if transaction_type == "Stock In" else None,
-                     transaction_type, demo_item["baseline_unit_cost"], f"Admin dashboard sample activity: {transaction_type} {index}/3"))
+                     transaction_type, demo_item["baseline_unit_cost"], activity_date,
+                     f"Admin dashboard sample activity: {transaction_type} {index}/3", activity_date))
         cur.execute("SELECT item_id FROM item WHERE qty_on_hand<=reorder_threshold AND archived_at IS NULL")
         initial_alerts = [inventory.record_low_stock_transition(conn, row["item_id"]) for row in cur.fetchall()]
         conn.commit()
     for alert in initial_alerts:
-        if alert:
+        if alert and os.getenv("SUPPRESS_DEMO_EMAIL") != "1":
             inventory.deliver_low_stock_alert(alert)
-    print("Demo data created. Admin login: admin@dundermifflin.local")
+    print("Demo data created. Admin login: michaelscott@dm.office")
     print(f"Admin password (save now): {admin_password}")
-    print("Personnel login: pam@dundermifflin.local or jim@dundermifflin.local")
+    print("Personnel login: pambeesly@dm.office or jim@dundermifflin.local")
     print(f"Personnel password (save now): {personnel_password}")
+
+
+@app.cli.command("set-demo-credentials")
+def set_demo_credentials():
+    """Update the existing Michael Scott and Pam Beesly demo accounts."""
+    admin_password = os.getenv("DEMO_ADMIN_PASSWORD", "")
+    personnel_password = os.getenv("DEMO_PERSONNEL_PASSWORD", "")
+    if not admin_password or not personnel_password:
+        raise RuntimeError("Set DEMO_ADMIN_PASSWORD and DEMO_PERSONNEL_PASSWORD before running this command.")
+
+    with connect_db() as conn, conn.cursor() as cur:
+        cur.execute("""SELECT u.user_id,u.role,COALESCE(a.admin_name,p.personnel_name) AS person_name
+            FROM users u
+            LEFT JOIN inventory_admin a ON a.admin_id=u.admin_id
+            LEFT JOIN office_personnel p ON p.personnel_id=u.personnel_id
+            WHERE (u.role='admin' AND a.admin_name='Michael Scott')
+               OR (u.role='personnel' AND p.personnel_name='Pam Beesly')""")
+        accounts = cur.fetchall()
+        admin = [row for row in accounts if row["role"] == "admin"]
+        personnel = [row for row in accounts if row["role"] == "personnel"]
+        if len(admin) != 1 or len(personnel) != 1:
+            raise RuntimeError("Expected exactly one Michael Scott admin and one Pam Beesly personnel account.")
+
+        new_emails = ("michaelscott@dm.office", "pambeesly@dm.office")
+        cur.execute("SELECT user_id FROM users WHERE email IN (?,?)", new_emails)
+        conflicts = {row["user_id"] for row in cur.fetchall()} - {admin[0]["user_id"], personnel[0]["user_id"]}
+        if conflicts:
+            raise RuntimeError("A requested demo email is already assigned to a different account.")
+
+        cur.execute("UPDATE users SET email=?,password_hash=? WHERE user_id=?",
+                    (new_emails[0], generate_password_hash(admin_password), admin[0]["user_id"]))
+        cur.execute("UPDATE users SET email=?,password_hash=? WHERE user_id=?",
+                    (new_emails[1], generate_password_hash(personnel_password), personnel[0]["user_id"]))
+        conn.commit()
+    print("Updated the Michael Scott admin and Pam Beesly personnel demo credentials.")
+
+
+@app.cli.command("reset-demo")
+def reset_demo():
+    """Back up the current SQLite file, then replace its data with demo records."""
+    if os.getenv("CONFIRM_DEMO_RESET") != "YES":
+        raise RuntimeError("Set CONFIRM_DEMO_RESET=YES to confirm that all current records will be replaced.")
+    if not os.getenv("DEMO_ADMIN_PASSWORD") or not os.getenv("DEMO_PERSONNEL_PASSWORD"):
+        raise RuntimeError("Set DEMO_ADMIN_PASSWORD and DEMO_PERSONNEL_PASSWORD before resetting.")
+
+    database_path = database.sqlite_path
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup_path = database_path.with_name(f"{database_path.stem}.pre-demo-reset-{timestamp}{database_path.suffix}")
+    with sqlite3.connect(database_path) as source, sqlite3.connect(backup_path) as backup:
+        source.backup(backup)
+
+    try:
+        ensure_request_cart_table()
+        with connect_db() as conn, conn.cursor() as cur:
+            for table in (
+                "low_stock_alert", "request_cart_item", "transaction_log", "supply_request", "users",
+                "item", "office_personnel", "inventory_admin", "supplier", "shelf",
+            ):
+                cur.execute(f"DELETE FROM {table}")
+            cur.execute("DELETE FROM sqlite_sequence")
+            conn.commit()
+
+        previous_env = {key: os.environ.get(key) for key in ("APP_ENV", "SUPPRESS_DEMO_EMAIL")}
+        os.environ["APP_ENV"] = "development"
+        os.environ["SUPPRESS_DEMO_EMAIL"] = "1"
+        try:
+            seed_demo.callback()
+        finally:
+            for key, value in previous_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+    except Exception:
+        with sqlite3.connect(backup_path) as backup, sqlite3.connect(database_path) as target:
+            backup.backup(target)
+        raise
+
+    print(f"Demo database reset complete. Pre-reset backup: {backup_path}")
 
 
 @app.cli.command("seed-admin-activity")

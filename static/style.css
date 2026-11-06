@@ -251,6 +251,7 @@ button,.button{box-sizing:border-box;height:48px;min-height:48px;padding-top:0;p
 .admin-request-summary-table th:nth-child(7),.admin-request-summary-table td:nth-child(7){width:18%}
 .admin-request-summary-table .action-group{flex-wrap:wrap;gap:5px}
 .admin-metric-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.admin-metric-grid,.staff-metric-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 .tiny-button.approve{background:#1748cf;border-color:#1748cf;color:#fff}
 .tiny-button.fulfill{background:#21814e;border-color:#21814e;color:#fff}
 .tiny-button.decline{background:#fff;border-color:#d34b55;color:#bd3541}
@@ -460,6 +461,8 @@ body :is(p,small,label,button,input,select,textarea,th,td,a,span,li):not(.cart-q
 @media(max-width:600px){.item-stock-fields{grid-template-columns:1fr 138px;gap:0 10px}.item-stock-fields label:first-child{grid-column:span 2}.notification-panel{right:-6px}.modal-header .modal-close{margin-right:-8px}}
 @media(max-width:600px){.quantity-unit-field{grid-template-columns:1fr}.quantity-unit-label{grid-column:auto}}
 @media(max-width:1050px){.admin-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.admin-metric-grid,.staff-metric-grid{grid-auto-rows:1fr}
+@media(max-width:1050px){.admin-metric-grid,.staff-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .password-wrap input.password-masked{-webkit-text-security:disc;text-security:disc}
 .login-card>.muted{display:none}
 .login-card .check-label span{color:#858b95}
@@ -473,9 +476,9 @@ body :is(p,small,label,button,input,select,textarea,th,td,a,span,li,b,strong,i,s
 .modal select:has(option:checked[value=""]){font-style:italic;color:#a2aaba}
 .modal select option[value=""]{font-style:italic;color:#a2aaba}
 .modal{position:relative}
-.modal-header{position:relative;padding-right:38px}
+.modal-header{position:static;padding-right:38px}
 .modal-header .modal-close{position:absolute;top:2px;right:2px;width:32px;height:32px;min-height:32px;margin:0;padding:0}
-.confirm-dialog .confirm-close,.submission-success-modal>.modal-close{top:24px;right:24px;width:32px;height:32px;min-height:32px;padding:0}
+.confirm-dialog .confirm-close,.submission-success-modal>.modal-close{top:2px;right:2px;width:32px;height:32px;min-height:32px;padding:0}
 .confirm-dialog{width:min(100%,400px);padding:26px 22px 22px}
 .confirm-dialog .confirm-actions{padding:0}
 .archive-item-confirm .confirm-dialog,.archive-shelf-confirm .confirm-dialog{width:min(100%,348px);padding:26px 22px 22px}
@@ -492,3 +495,12 @@ body :is(p,small,label,button,input,select,textarea,th,td,a,span,li,b,strong,i,s
 .notice.stock-alert-notice button{top:50%;transform:translateY(-50%)}
 @media(max-width:600px){.transaction-stock-fields{grid-template-columns:1fr;gap:0}.transaction-stock-fields{grid-column:span 2}.archive-supplier-confirm .confirm-dialog{width:min(100%,383px)}.archive-supplier-confirm .confirm-actions,.archive-item-confirm .confirm-actions,.archive-shelf-confirm .confirm-actions{gap:8px}.archive-supplier-confirm .confirm-keep-button,.archive-supplier-confirm .confirm-submit-button,.archive-item-confirm .confirm-keep-button,.archive-item-confirm .confirm-submit-button,.archive-shelf-confirm .confirm-keep-button,.archive-shelf-confirm .confirm-submit-button{width:auto;flex:1}}
 @media(max-width:400px){.transaction-stock-fields{grid-column:auto}}
+
+/* Shared interaction states for buttons and dropdown controls. */
+button,.button,select,.select-control{transition:background-color .16s ease,color .16s ease,border-color .16s ease,box-shadow .16s ease,filter .16s ease}
+button:not(:disabled):hover,.button:not(:disabled):hover{filter:brightness(.96)}
+button:not(:disabled):active,.button:not(:disabled):active{filter:brightness(.9)}
+button:disabled,.button:disabled,select:disabled,.select-control:disabled{opacity:.58;cursor:not-allowed;filter:none;box-shadow:none}
+select:not(:disabled):hover,.select-control:not(:disabled):hover{border-color:#9ab3f5}
+select:not(:disabled):active,.select-control:not(:disabled):active{border-color:#7899ed;box-shadow:inset 0 1px 2px #1746d11a}
+button:focus-visible,.button:focus-visible,select:focus-visible,.select-control:focus-visible{outline:3px solid #1746d155;outline-offset:2px}

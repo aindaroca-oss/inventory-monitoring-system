@@ -5,11 +5,21 @@
     <div class="notification-menu">
       <button type="button" id="notification-toggle" class="icon-button notification-button" title="Notifications" aria-label="Notifications" aria-expanded="false" aria-controls="notification-panel" data-notification-key="{{ notification_key }}">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
-        {% if stock_notifications %}<i class="notification-dot" aria-hidden="true"></i>{% endif %}
+        {% if notification_items %}<i class="notification-dot" aria-hidden="true"></i>{% endif %}
       </button>
       <section class="notification-panel" id="notification-panel" aria-label="Notifications" hidden>
-        <div class="notification-panel-head"><b>Notifications</b><span>{{ stock_notifications|length }} stock alerts</span></div>
-        {% if stock_notifications %}<div class="notification-list">{% for item in stock_notifications %}<a href="{{ url_for('home',page='inventory') }}" class="notification-entry"><span class="inventory-badge {{ 'out-of-stock' if item.qty_on_hand==0 else 'low' }}"><i aria-hidden="true"></i>{{ item.stock_label }}</span><b>{{ item.item_name }}</b><small>{{ item.qty_on_hand }} {{ item.unit_name }} on hand · Reorder at {{ item.reorder_threshold }}</small></a>{% endfor %}</div>{% else %}<p class="notification-empty">No new notifications.</p>{% endif %}
+        <div class="notification-panel-head"><b>Notifications</b><span>{{ notification_items|length }} {{ notification_label }}</span></div>
+        {% if notification_items %}
+          <div class="notification-list">
+            {% for item in notification_items %}
+              {% if user.role=='admin' %}
+                <a href="{{ url_for('home',page='inventory') }}" class="notification-entry"><span class="inventory-badge {{ 'out-of-stock' if item.qty_on_hand==0 else 'low' }}"><i aria-hidden="true"></i>{{ item.stock_label }}</span><b>{{ item.item_name }}</b><small>{{ item.qty_on_hand }} {{ item.unit_name }} on hand · Reorder at {{ item.reorder_threshold }}</small></a>
+              {% else %}
+                <a href="{{ url_for('home',page='requests') }}" class="notification-entry"><span class="status-chip request-status-chip {{ item.status|lower }}">{{ item.status }}</span><b>{{ item.request_code }}</b><small>{{ item.item_names }} · {{ item.reviewed_at|date_short if item.reviewed_at else item.requested_at|date_short }}</small></a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% else %}<p class="notification-empty">No new notifications.</p>{% endif %}
       </section>
     </div>
     <div class="user-menu"><div class="avatar">{{ (user.name or user.email)[:1]|upper }}</div><div class="user-name"><b>{{ user.name }}</b><small>{{ 'Inventory Admin' if user.role=='admin' else 'Office Personnel' }}</small></div></div>

@@ -138,19 +138,34 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingConfirmAction = null;
     confirmBackdrop?.classList.remove('visible', 'danger-confirm', 'logout-confirm');
     clearArchiveConfirmVariant();
-    if (form) form.submit();
+    if (form?.classList.contains('sidebar-logout')) {
+      confirmSubmit.disabled = true;
+      Promise.resolve(cartSaveQueue).finally(() => {
+        confirmSubmit.disabled = false;
+        form.submit();
+      });
+    } else if (form) form.submit();
     else action?.();
   });
   const cartKey = `dunder-inventory-request-cart-${document.body.dataset.userId || 'guest'}`;
   const stockByItem = new Map([...document.querySelectorAll('[data-add-to-cart]')].map(button => [Number(button.dataset.itemId), Number(button.dataset.itemStock || 0)]));
+  const cartSaveUrl = document.body.dataset.requestCartUrl;
+  const cartCsrf = document.body.dataset.csrfToken;
   let requestCart = [];
-  try {
-    const savedCart = JSON.parse(sessionStorage.getItem(cartKey) || '[]');
-    if (Array.isArray(savedCart)) requestCart = savedCart
+  let migrateSessionCart = false;
+  const sanitizeCart = values => Array.isArray(values)
+    ? values
       .filter(item => item && Number(item.item_id) > 0 && Number(item.quantity) > 0)
       .map(item => ({ ...item, stock_qty: stockByItem.get(Number(item.item_id)) ?? Number(item.stock_qty || 0) }))
       .filter(item => item.stock_qty > 0)
-      .map(item => ({ ...item, quantity: Math.min(Number(item.quantity), Number(item.stock_qty)) }));
+      .map(item => ({ ...item, quantity: Math.min(Number(item.quantity), Number(item.stock_qty)) }))
+    : [];
+  try {
+    requestCart = sanitizeCart(JSON.parse(document.body.dataset.requestCart || '[]'));
+    if (!requestCart.length && sessionStorage.getItem(cartKey) !== null) {
+      requestCart = sanitizeCart(JSON.parse(sessionStorage.getItem(cartKey)));
+      migrateSessionCart = requestCart.length > 0;
+    }
   } catch { requestCart = []; }
   const cartList = document.getElementById('request-cart-list');
   const cartEmpty = document.getElementById('request-cart-empty');
@@ -162,10 +177,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const reviewStep = document.getElementById('request-review-step');
   const addedPopup = document.getElementById('added-to-request-popup');
   let addedPopupTimer;
+  let cartSaveQueue = Promise.resolve();
 
   const persistCart = () => {
     sessionStorage.setItem(cartKey, JSON.stringify(requestCart));
     renderCart();
+    if (cartSaveUrl && document.body.dataset.userId) {
+      const snapshot = requestCart.map(item => ({ item_id: Number(item.item_id), quantity: Number(item.quantity) }));
+      cartSaveQueue = cartSaveQueue.catch(() => {}).then(async () => {
+        const response = await fetch(cartSaveUrl, {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': cartCsrf },
+          body: JSON.stringify({ items: snapshot }),
+        });
+        if (!response.ok) throw new Error('Request cart could not be saved.');
+        const saved = await response.json();
+        requestCart = sanitizeCart(saved.items || []);
+        sessionStorage.setItem(cartKey, JSON.stringify(requestCart));
+        renderCart();
+      }).catch(error => {
+        console.error(error);
+        let notice = document.getElementById('request-cart-save-error');
+        if (!notice) {
+          notice = document.createElement('div');
+          notice.id = 'request-cart-save-error';
+          notice.className = 'notice error';
+          notice.setAttribute('role', 'status');
+          document.querySelector('.page-content')?.prepend(notice);
+        }
+        notice.textContent = 'Your cart could not be saved. Check your connection before logging out.';
+      });
+    }
   };
   const renderCart = () => {
     if (!cartList) return;
@@ -275,6 +318,16 @@ document.addEventListener('DOMContentLoaded', () => {
     cartStep.hidden = false;
     reviewStep.hidden = true;
   });
+  const requestReviewForm = document.getElementById('review-request-form');
+  let requestSubmitting = false;
+  requestReviewForm?.addEventListener('submit', event => {
+    if (requestSubmitting) return;
+    event.preventDefault();
+    requestSubmitting = true;
+    const submitButton = document.getElementById('submit-cart-request');
+    if (submitButton) submitButton.disabled = true;
+    Promise.resolve(cartSaveQueue).then(() => requestReviewForm.submit());
+  });
   const purpose = document.querySelector('#review-request-form textarea[name="notes"]');
   const purposeCount = document.getElementById('request-purpose-count');
   purpose?.addEventListener('input', () => { if (purposeCount) purposeCount.textContent = `${purpose.value.length}/255`; });
@@ -287,11 +340,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const submittedPopup = document.getElementById('request-submitted-modal');
   if (submittedPopup?.dataset.show === 'true') {
     requestCart = [];
+    migrateSessionCart = false;
     sessionStorage.removeItem(cartKey);
     renderCart();
     open('request-submitted-modal');
   }
   renderCart();
+  if (migrateSessionCart) persistCart();
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', event => { if (event.target === backdrop) backdrop.classList.remove('visible'); });
   });
@@ -307,18 +362,55 @@ document.addEventListener('DOMContentLoaded', () => {
     if (field) {
       const visible = field.classList.contains('password-masked');
       field.classList.toggle('password-masked', !visible);
+      field.type = visible ? 'text' : 'password';
       button.classList.toggle('is-visible', visible);
       button.setAttribute('aria-pressed', String(visible));
       button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
     }
   }));
+  const loginForms = [...document.querySelectorAll('[data-login-panel]')];
+  const rememberedLoginKey = role => 'inventory-system-remembered-login:' + role;
+  const showLoginPanel = role => {
+    loginForms.forEach(form => { form.hidden = form.dataset.loginPanel !== role; });
+    document.querySelectorAll('[data-login-role]').forEach(button => {
+      button.classList.toggle('active', button.dataset.loginRole === role);
+    });
+    const form = loginForms.find(item => item.dataset.loginPanel === role);
+    const email = form?.querySelector('input[name="email"]');
+    if (email && !email.defaultValue && !email.value) {
+      email.value = localStorage.getItem(rememberedLoginKey(role)) || '';
+    }
+  };
+  try {
+    const legacySavedLogin = JSON.parse(localStorage.getItem('inventory-system-remembered-login') || 'null');
+    if (legacySavedLogin?.role && legacySavedLogin?.email
+      && !localStorage.getItem(rememberedLoginKey(legacySavedLogin.role))) {
+      localStorage.setItem(rememberedLoginKey(legacySavedLogin.role), legacySavedLogin.email);
+    }
+    localStorage.removeItem('inventory-system-remembered-login');
+  } catch {
+    // Keep sign-in usable if the browser blocks local storage.
+  }
   document.querySelectorAll('[data-login-role]').forEach(button => button.addEventListener('click', () => {
-    document.querySelectorAll('[data-login-role]').forEach(option => option.classList.toggle('active', option === button));
-    const field = document.getElementById('login-role');
-    if (field) field.value = button.dataset.loginRole;
+    showLoginPanel(button.dataset.loginRole);
   }));
-  document.querySelector('.login-card')?.addEventListener('submit', () => {
-    Object.keys(sessionStorage).filter(key => key.startsWith('inventory-notifications-seen:')).forEach(key => sessionStorage.removeItem(key));
+  loginForms.forEach(loginForm => {
+    const role = loginForm.dataset.loginPanel;
+    const loginEmail = loginForm.querySelector('input[name="email"]');
+    const rememberLogin = loginForm.querySelector('input[name="remember"]');
+    const savedEmail = localStorage.getItem(rememberedLoginKey(role));
+    if (savedEmail && !loginEmail.defaultValue && !loginEmail.value) loginEmail.value = savedEmail;
+    rememberLogin?.addEventListener('change', () => {
+      if (!rememberLogin.checked) localStorage.removeItem(rememberedLoginKey(role));
+    });
+    loginForm.addEventListener('submit', () => {
+      if (rememberLogin?.checked && loginEmail.value.trim()) {
+        localStorage.setItem(rememberedLoginKey(role), loginEmail.value.trim());
+      } else {
+        localStorage.removeItem(rememberedLoginKey(role));
+      }
+      Object.keys(sessionStorage).filter(key => key.startsWith('inventory-notifications-seen:')).forEach(key => sessionStorage.removeItem(key));
+    });
   });
   document.querySelectorAll('[data-dismiss-notice]').forEach(button => button.addEventListener('click', () => button.closest('[data-notice]')?.remove()));
 

@@ -74,6 +74,16 @@ BEGIN
     UPDATE item SET updated_at = CURRENT_TIMESTAMP WHERE item_id = NEW.item_id;
 END;
 
+CREATE TABLE request_cart_item (
+    personnel_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 9999),
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (personnel_id, item_id),
+    FOREIGN KEY (personnel_id) REFERENCES office_personnel(personnel_id) ON DELETE CASCADE,
+    FOREIGN KEY (item_id) REFERENCES item(item_id) ON DELETE CASCADE
+);
+
 CREATE TABLE supply_request (
     request_id INTEGER PRIMARY KEY AUTOINCREMENT,
     personnel_id INTEGER NOT NULL,
