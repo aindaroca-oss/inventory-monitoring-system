@@ -60,3 +60,6 @@ Low-stock transitions create one durable, de-duplicated `low_stock_alert` record
 - Item, supplier, shelf and team account management.
 
 The schema follows the supplied data dictionary and adds `users`, archive fields and low-stock episode fields to support authentication, safe history retention and idempotent alert records. The app is an MVP for local coursework use; deploy behind a production WSGI server and HTTPS before exposing it to a network.
+
+# inventory-monitoring-system
+
